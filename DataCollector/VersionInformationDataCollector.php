@@ -43,32 +43,40 @@ class VersionInformationDataCollector extends DataCollector
 
         if (file_exists($this->rootDir . '/.svn/')) {
             $this->data->mode = self::SVN;
-            $this->collectSvn($this->rootDir, $request, $response, $exception);
+            $this->collectSvn($this->rootDir, $request, $response);
         } elseif (file_exists($this->rootDir . '/.git/')) {
             $this->data->mode = self::GIT;
-            $this->collectGit($this->rootDir, $request, $response, $exception);
+            $this->collectGit($this->rootDir, $request, $response);
         } else {
-            throw new \Exception('Could not find Subversion or Git.');
+            throw new \InvalidArgumentException(sprintf('Could not find Subversion or Git repository in "%s" directory.', $this->rootDir));
         }
     }
 
-    private function collectGit($rootDir, Request $request, Response $response, \Exception $exception = null)
+    private function runCommand($command)
     {
-        $process = new Process('cd '.$rootDir.'; git --no-pager show-ref --dereference');
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
+        $process = new Process($command, $this->rootDir);
+
+        if (defined('PHP_WINDOWS_VERSION_BUILD')) {
+            $env = array_change_key_case(array_replace($_ENV, $_SERVER), CASE_UPPER);
+            $process->setEnv(array(
+                'PATH' => $env['PATH'],
+                'SYSTEMROOT' => $env['SYSTEMROOT'],
+            ));
         }
 
-        $process = new Process('git rev-parse --abbrev-ref HEAD');
         $process->run();
-        $currentBranch = trim($process->getOutput());
         if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
+            throw new \RuntimeException($process->getErrorOutput());
         }
+        
+        return $process->getOutput();
+    }
 
-        $refs = explode("\n",trim($output));
+    private function collectGit($rootDir, Request $request, Response $response)
+    {
+        $currentBranch = trim($this->runCommand('git rev-parse --abbrev-ref HEAD'));
+        $refs = explode("\n",trim($this->runCommand('git --no-pager show-ref --dereference')));
+
         $head = substr($refs[0],41);
         foreach ($refs as $ref) {
             if (strstr($ref, $currentBranch)) {
@@ -85,101 +93,31 @@ class VersionInformationDataCollector extends DataCollector
         $ahead = "$head..$remote";
         $behind = "$remote..$head";
 
-        $process = new Process('git --no-pager log -1 --pretty=\'{"hash":"%h","date":"%ai","name":"%an","branch":"%d"}\' ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->information = json_decode($output);
+        $this->data->information = json_encode($this->runCommand('git --no-pager log -1 --pretty={"hash":"%h","date":"%ai","name":"%an","branch":"%d"}'));
+        $this->data->informationText = $this->runCommand('git --no-pager log -1 --decorate');
 
-        $process = new Process('git --no-pager log -1 --decorate ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->informationText = $output;
+        $this->data->statusText = $this->runCommand('git --no-pager status --porcelain');
+        $this->data->status = explode("\n", trim($this->data->statusText));
 
-        $process = new Process('git --no-pager status --porcelain ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->status = $output ? explode("\n", trim($output)) : array();
-        $this->data->statusText = $output;
-
-        $process = new Process('git --no-pager log --pretty=format: '.$ahead.' --name-status ' . $rootDir);
-        $process->run();
-        $output = trim($process->getOutput());
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
+        $output = trim($this->runCommand('git --no-pager log --pretty=format: '.$ahead.' --name-status'));
         $this->data->ahead = $output ? explode("\n", trim($output)) : array();
         $this->data->ahead = array_filter($this->data->ahead);
 
-        $process = new Process('git --no-pager log '.$ahead.' --name-status ' . $rootDir);
-        $process->run();
-        $output = trim($process->getOutput());
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->aheadText = $output;
-
-        $process = new Process('git --no-pager log --pretty=format: '.$behind.' --name-status ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->behind = $output ? explode("\n", trim($output)) : array();
-        $this->data->behind = array_filter($this->data->behind);
-
-        $process = new Process('git --no-pager log '.$behind.' --name-status ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->behindText = $output;
+        $this->data->aheadText = trim($this->runCommand('git --no-pager log '.$ahead.' --name-status'));
+        $this->data->behind = array_filter(explode("\n", trim($this->runCommand('git --no-pager log --pretty=format: '.$behind.' --name-status '))));
+        $this->data->behindText = $this->runCommand('git --no-pager log '.$behind.' --name-status ');
 
     }
 
-    private function collectSvn($rootDir, Request $request, Response $response,
-            \Exception $exception = null)
+    private function collectSvn($rootDir, Request $request, Response $response)
     {
-        $process = new Process('svn info --xml ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
+        $output = $this->runCommand('svn info --xml');
         $this->data->information = json_decode(json_encode(simplexml_load_string($output)));
+        $this->data->informationText = $this->runCommand('svn info');
 
-        $process = new Process('svn info ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->informationText = $output;
-
-        $process = new Process('svn status --xml ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
+        $output = $this->runCommand('svn status --xml');
         $this->data->status = json_decode(json_encode(simplexml_load_string($output)));
-
-        $process = new Process('svn status ' . $rootDir);
-        $process->run();
-        $output = $process->getOutput();
-        if (!$process->isSuccessful()) {
-            throw new \Exception($process->getErrorOutput());
-        }
-        $this->data->statusText = $output;
+        $this->data->statusText = $this->runCommand('svn status');
     }
 
     /**
