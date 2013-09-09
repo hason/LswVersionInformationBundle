@@ -39,7 +39,6 @@ class VersionInformationDataCollector extends DataCollector
         }
 
         $this->data = (object) array();
-        $dumper = new \Symfony\Component\Yaml\Dumper();
         $container = $this->kernel->getContainer();
         $rootDir = realpath($container->getParameter('root_dir') ?: $this->kernel->getRootDir() . '/../');
 
