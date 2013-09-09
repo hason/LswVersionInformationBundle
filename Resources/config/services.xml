@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+
+<container xmlns="http://symfony.com/schema/dic/services"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+
+    <parameters>
+        <parameter key="data_collector.version_information.class">Lsw\VersionInformationBundle\DataCollector\VersionInformationDataCollector</parameter>
+        <parameter key="data_collector.version_information.template">LswVersionInformationBundle:Collector:version_information</parameter>
+        <parameter key="data_collector.version_information.root_dir">%kernel.root_dir%/..</parameter>
+    </parameters>
+
+    <services>
+        <service id="data_collector.version_information" class="%data_collector.version_information.class%">
+            <tag name="data_collector" template="%data_collector.version_information.template%" id="version_information" />
+            <argument>%data_collector.version_information.root_dir%</argument>
+        </service>
+    </services>
+</container>

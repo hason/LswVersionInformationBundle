@@ -25,8 +25,9 @@ class Configuration implements ConfigurationInterface
         // more information on that topic.
         $rootNode
             ->children()
-            ->scalarNode('root_dir')->defaultValue(false)->end()
-            ->end();
+                ->scalarNode('root_dir')->defaultValue('%kernel.root_dir%/..')->end()
+            ->end()
+        ;
 
         return $treeBuilder;
     }

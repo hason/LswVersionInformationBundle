@@ -1,5 +1,6 @@
 <?php
 namespace Lsw\VersionInformationBundle\DataCollector;
+
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\DataCollector\DataCollector;
 use Symfony\Component\HttpFoundation\Request;
@@ -14,7 +15,7 @@ use Symfony\Component\Process\Process;
 class VersionInformationDataCollector extends DataCollector
 {
 
-    private $kernel;
+    private $rootDir;
 
     const SVN = 'svn';
     const GIT = 'git';
@@ -24,9 +25,9 @@ class VersionInformationDataCollector extends DataCollector
      *
      * @param KernelInterface $kernel Kernel object
      */
-    public function __construct(KernelInterface $kernel)
+    public function __construct($rootDir)
     {
-        $this->kernel = $kernel;
+        $this->rootDir = $rootDir;
     }
 
     /**
@@ -39,19 +40,16 @@ class VersionInformationDataCollector extends DataCollector
         }
 
         $this->data = (object) array();
-        $container = $this->kernel->getContainer();
-        $rootDir = realpath($container->getParameter('root_dir') ?: $this->kernel->getRootDir() . '/../');
 
-        if (file_exists($rootDir . '/.svn/')) {
+        if (file_exists($this->rootDir . '/.svn/')) {
             $this->data->mode = self::SVN;
-            $this->collectSvn($rootDir, $request, $response, $exception);
-        } elseif (file_exists($rootDir . '/.git/')) {
+            $this->collectSvn($this->rootDir, $request, $response, $exception);
+        } elseif (file_exists($this->rootDir . '/.git/')) {
             $this->data->mode = self::GIT;
-            $this->collectGit($rootDir, $request, $response, $exception);
+            $this->collectGit($this->rootDir, $request, $response, $exception);
         } else {
             throw new \Exception('Could not find Subversion or Git.');
         }
-
     }
 
     private function collectGit($rootDir, Request $request, Response $response, \Exception $exception = null)
